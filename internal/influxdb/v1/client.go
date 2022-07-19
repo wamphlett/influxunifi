@@ -7,7 +7,7 @@ import (
 
 	influx "github.com/influxdata/influxdb1-client/v2"
 
-	"github.com/unpoller/influxunifi/internal/influxdb/model"
+	"github.com/wamphlett/influxunifi/internal/influxdb/model"
 )
 
 const (
@@ -42,7 +42,7 @@ func withDefaultOptions(options Options, logger errorLogger) Options {
 		options.Username = defaultInfluxUsername
 	}
 
-	if strings.HasPrefix(u.Pass, "file://") {
+	if strings.HasPrefix(options.Password, "file://") {
 		options.Password = getPassFromFile(strings.TrimPrefix(options.Password, "file://"), logger)
 	}
 

@@ -1,9 +1,9 @@
-module github.com/unpoller/influxunifi
+module github.com/wamphlett/influxunifi
 
 go 1.16
 
 require (
-	github.com/influxdata/influxdb-client-go/v2 v2.9.1 // indirect
+	github.com/influxdata/influxdb-client-go/v2 v2.9.1
 	github.com/influxdata/influxdb1-client v0.0.0-20200827194710-b269163b24ab
 	github.com/unpoller/poller v0.0.0-20210623101401-f12841d79a28
 	github.com/unpoller/unifi v0.0.9-0.20210623100314-3dccfdbc4c80

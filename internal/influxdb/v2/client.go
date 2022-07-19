@@ -6,7 +6,7 @@ import (
 	influx "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/influxdata/influxdb-client-go/v2/api/write"
 
-	"github.com/unpoller/influxunifi/internal/influxdb/model"
+	"github.com/wamphlett/influxunifi/internal/influxdb/model"
 )
 
 const (

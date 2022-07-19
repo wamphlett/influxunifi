@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unpoller/influxunifi/internal/influxdb/model"
 	"github.com/unpoller/poller"
+	"github.com/wamphlett/influxunifi/internal/influxdb/model"
 )
 
 // Report is returned to the calling procedure after everything is processed.

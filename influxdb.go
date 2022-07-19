@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/unpoller/influxunifi/internal/influxdb/model"
-	influxDBV1 "github.com/unpoller/influxunifi/internal/influxdb/v1"
-	influxDBV2 "github.com/unpoller/influxunifi/internal/influxdb/v2"
 	"github.com/unpoller/poller"
 	"github.com/unpoller/unifi"
 	"github.com/unpoller/webserver"
+	"github.com/wamphlett/influxunifi/internal/influxdb/model"
+	influxDBV1 "github.com/wamphlett/influxunifi/internal/influxdb/v1"
+	influxDBV2 "github.com/wamphlett/influxunifi/internal/influxdb/v2"
 	"golift.io/cnfg"
 )
 
@@ -35,7 +35,7 @@ const (
 // Config defines the data needed to store metrics in InfluxDB.
 type Config struct {
 	Interval  cnfg.Duration `json:"interval,omitempty" toml:"interval,omitempty" xml:"interval" yaml:"interval"`
-	UseV2     bool          `json:"use_v2,omitempty" toml:"use_v2,omitempty" xml:"use_v2" yaml:"use_v2"`
+	UseV2     bool          `json:"usev2,omitempty" toml:"usev2,omitempty" xml:"usev2" yaml:"usev2"`
 	URL       string        `json:"url,omitempty" toml:"url,omitempty" xml:"url" yaml:"url"`
 	User      string        `json:"user,omitempty" toml:"user,omitempty" xml:"user" yaml:"user"`
 	Pass      string        `json:"pass,omitempty" toml:"pass,omitempty" xml:"pass" yaml:"pass"`
