@@ -3,20 +3,23 @@
 package influxunifi
 
 import (
-	"crypto/tls"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"strconv"
-	"strings"
 	"time"
 
-	influx "github.com/influxdata/influxdb1-client/v2"
+	"github.com/unpoller/influxunifi/internal/influxdb/model"
+	influxDBV1 "github.com/unpoller/influxunifi/internal/influxdb/v1"
+	influxDBV2 "github.com/unpoller/influxunifi/internal/influxdb/v2"
 	"github.com/unpoller/poller"
 	"github.com/unpoller/unifi"
 	"github.com/unpoller/webserver"
 	"golift.io/cnfg"
 )
+
+type InfluxClient interface {
+	Write(...*model.Point) error
+}
 
 // PluginName is the name of this plugin.
 const PluginName = "influxdb"
@@ -32,9 +35,12 @@ const (
 // Config defines the data needed to store metrics in InfluxDB.
 type Config struct {
 	Interval  cnfg.Duration `json:"interval,omitempty" toml:"interval,omitempty" xml:"interval" yaml:"interval"`
+	UseV2     bool          `json:"use_v2,omitempty" toml:"use_v2,omitempty" xml:"use_v2" yaml:"use_v2"`
 	URL       string        `json:"url,omitempty" toml:"url,omitempty" xml:"url" yaml:"url"`
 	User      string        `json:"user,omitempty" toml:"user,omitempty" xml:"user" yaml:"user"`
 	Pass      string        `json:"pass,omitempty" toml:"pass,omitempty" xml:"pass" yaml:"pass"`
+	Token     string        `json:"token,omitempty" toml:"token,omitempty" xml:"token" yaml:"token"`
+	Org       string        `json:"org,omitempty" toml:"org,omitempty" xml:"org" yaml:"org"`
 	DB        string        `json:"db,omitempty" toml:"db,omitempty" xml:"db" yaml:"db"`
 	Disable   bool          `json:"disable" toml:"disable" xml:"disable,attr" yaml:"disable"`
 	VerifySSL bool          `json:"verify_ssl" toml:"verify_ssl" xml:"verify_ssl" yaml:"verify_ssl"`
@@ -50,7 +56,7 @@ type InfluxDB struct {
 // InfluxUnifi is returned by New() after you provide a Config.
 type InfluxUnifi struct {
 	Collector poller.Collect
-	influx    influx.Client
+	influx    InfluxClient
 	LastCheck time.Time
 	*InfluxDB
 }
@@ -115,12 +121,7 @@ func (u *InfluxUnifi) Run(c poller.Collect) error {
 
 	u.setConfigDefaults()
 
-	u.influx, err = influx.NewHTTPClient(influx.HTTPConfig{
-		Addr:      u.URL,
-		Username:  u.User,
-		Password:  u.Pass,
-		TLSConfig: &tls.Config{InsecureSkipVerify: !u.VerifySSL}, // nolint: gosec
-	})
+	u.influx, err = u.getInfluxClient()
 	if err != nil {
 		return fmt.Errorf("making client: %w", err)
 	}
@@ -134,27 +135,33 @@ func (u *InfluxUnifi) Run(c poller.Collect) error {
 	return nil
 }
 
+func (u *InfluxUnifi) getInfluxClient() (InfluxClient, error) {
+	if u.UseV2 {
+		return u.getInfluxClientV2()
+	}
+	return u.getInfluxClientV1()
+}
+
+func (u *InfluxUnifi) getInfluxClientV1() (InfluxClient, error) {
+	return influxDBV1.New(influxDBV1.Options{
+		URL:       u.URL,
+		Username:  u.URL,
+		Password:  u.Pass,
+		DB:        u.DB,
+		VerifySSL: u.VerifySSL,
+	}, u.LogErrorf)
+}
+
+func (u *InfluxUnifi) getInfluxClientV2() (InfluxClient, error) {
+	return influxDBV2.New(influxDBV2.Options{
+		URL:    u.URL,
+		Token:  u.Token,
+		Bucket: u.DB,
+		Org:    u.Org,
+	}), nil
+}
+
 func (u *InfluxUnifi) setConfigDefaults() {
-	if u.URL == "" {
-		u.URL = defaultInfluxURL
-	}
-
-	if u.User == "" {
-		u.User = defaultInfluxUser
-	}
-
-	if strings.HasPrefix(u.Pass, "file://") {
-		u.Pass = u.getPassFromFile(strings.TrimPrefix(u.Pass, "file://"))
-	}
-
-	if u.Pass == "" {
-		u.Pass = defaultInfluxUser
-	}
-
-	if u.DB == "" {
-		u.DB = defaultInfluxDB
-	}
-
 	if u.Interval.Duration == 0 {
 		u.Interval = cnfg.Duration{Duration: defaultInterval}
 	} else if u.Interval.Duration < minimumInterval {
@@ -162,15 +169,6 @@ func (u *InfluxUnifi) setConfigDefaults() {
 	}
 
 	u.Interval = cnfg.Duration{Duration: u.Interval.Duration.Round(time.Second)}
-}
-
-func (u *InfluxUnifi) getPassFromFile(filename string) string {
-	b, err := ioutil.ReadFile(filename)
-	if err != nil {
-		u.LogErrorf("Reading InfluxDB Password File: %v", err)
-	}
-
-	return strings.TrimSpace(string(b))
 }
 
 // ReportMetrics batches all device and client data into influxdb data points.
@@ -183,17 +181,11 @@ func (u *InfluxUnifi) ReportMetrics(m *poller.Metrics, e *poller.Events) (*Repor
 		ch:      make(chan *metric),
 		Start:   time.Now(),
 		Counts:  &Counts{Val: make(map[item]int)},
+		bp:      []*model.Point{},
 	}
 	defer close(r.ch)
 
 	var err error
-
-	// Make a new Influx Points Batcher.
-	r.bp, err = influx.NewBatchPoints(influx.BatchPointsConfig{Database: u.DB})
-
-	if err != nil {
-		return nil, fmt.Errorf("influx.NewBatchPoint: %w", err)
-	}
 
 	go u.collect(r, r.ch)
 	// Batch all the points.
@@ -201,7 +193,7 @@ func (u *InfluxUnifi) ReportMetrics(m *poller.Metrics, e *poller.Events) (*Repor
 	r.wg.Wait() // wait for all points to finish batching!
 
 	// Send all the points.
-	if err = u.influx.Write(r.bp); err != nil {
+	if err = u.influx.Write(r.bp...); err != nil {
 		return nil, fmt.Errorf("influxdb.Write(points): %w", err)
 	}
 
@@ -217,12 +209,13 @@ func (u *InfluxUnifi) collect(r report, ch chan *metric) {
 			m.TS = r.metrics().TS
 		}
 
-		pt, err := influx.NewPoint(m.Table, m.Tags, m.Fields, m.TS)
-		if err == nil {
-			r.batch(m, pt)
+		pt := &model.Point{
+			Measurement: m.Table,
+			Tags:        m.Tags,
+			Fields:      m.Fields,
+			Timestamp:   m.TS,
 		}
-
-		r.error(err)
+		r.batch(m, pt)
 		r.done()
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	influx "github.com/influxdata/influxdb1-client/v2"
+	"github.com/unpoller/influxunifi/internal/influxdb/model"
 	"github.com/unpoller/poller"
 )
 
@@ -19,7 +19,7 @@ type Report struct {
 	Elapsed time.Duration
 	ch      chan *metric
 	wg      sync.WaitGroup
-	bp      influx.BatchPoints
+	bp      []*model.Point
 }
 
 // Counts holds counters and has a lock to deal with routines.
@@ -34,7 +34,7 @@ type report interface {
 	done()
 	send(m *metric)
 	error(err error)
-	batch(m *metric, pt *influx.Point)
+	batch(m *metric, pt *model.Point)
 	metrics() *poller.Metrics
 	events() *poller.Events
 	addCount(item, ...int)
@@ -90,10 +90,10 @@ const (
 	fieldT = item("Fields")
 )
 
-func (r *Report) batch(m *metric, p *influx.Point) {
+func (r *Report) batch(m *metric, p *model.Point) {
 	r.addCount(pointT)
 	r.addCount(fieldT, len(m.Fields))
-	r.bp.AddPoint(p)
+	r.bp = append(r.bp, p)
 }
 
 func (r *Report) String() string {
